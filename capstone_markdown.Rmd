@@ -1,0 +1,361 @@
+---
+title: "Google Data Analytics Capstone"
+author: "Aidan Whyte"
+date: "2026-03-19"
+output: github_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Ask
+
+For this project, I work for a company called Cyclistic, which has stations of rentable bikes for the public all over Chicago, Illinois. People can either rent bikes for a single use, or for the day, or they can pay an annual subscription fee to rent bikes whenever and wherever they need to. These two groups are known as Casuals and Members. The owner of the company wants to find a way to convert more casual riders to annual members, as members are far more profitable.
+
+The business task I was assigned was to find out how annual members and casual riders use Cyclistic bikes differently. What are the noteworthy differences in behavior between these two groups of users?
+
+## Prepare
+
+The data sources I used are named Divvy 2019 Q1 and Divvy 2020 Q1, respectively. The datasets have these names because the the project I was tasked with answering is fictional. The two datasets provided were appropriate for this project and enabled me to complete my business task. The data from these two sources have been made public and available by Motivate International Inc. with [This License Agreement](https://divvybikes.com/data-license-agreement)
+
+The data is organized so every row in these spreadsheets being a single ride, characterized by Ride ID, start and end dates and times, Bike Id, start and end station names and IDs, wheather the user was classified as member or casual, and other less useful descriptive aspects of each ride that needn't be analyzed and were promptly cleaned out.
+
+## Process
+
+After appropriately housing and naming these datasets on my computer, I checked the data for errors in Google sheets, by trimming all columns, eliminating blank rows, checked for consistent spelling, and looked for any duplicate rows of data.
+
+Next, I created a column in each dataset named "ride_length", which calculated the total duration of each documented ride in seconds, as well as a column named "day_of_week", which output a number that corresponded to the day of the week, 1 being Sunday and 7 being Saturday. I now had the calendar date of each day that a ride started and ended, and the day of the week that ride took place. I then used pivot tables to look for any outliers and inconsistencies in the numbers.
+
+Once I was satisfied with how clean the data was, I imported both datasets into Rstudio for further processing and manipulation.
+
+
+```{r step1, include=FALSE}
+library(tidyverse)
+```
+
+```{r step2}
+q1_2019 <- read_csv("Divvy_Trips_2019_Q1.csv")
+q1_2020 <- read_csv("Divvy_Trips_2020_Q1.csv")
+```
+
+```{r step3}
+colnames(q1_2019)
+colnames(q1_2020)
+
+str(q1_2019)
+str(q1_2020)
+
+head(q1_2019)
+head(q1_2020)
+
+glimpse(q1_2019)
+glimpse(q1_2020)
+```
+
+
+After reviewing the imported data, I renamed all possible columns to match with the most current quarter (2020). I then mutated or deleted incongruent datatypes and columns so both datasets could be bound together into a single new dataset.
+
+```{r}
+q1_2019 <- rename(q1_2019, 
+                  ride_id = trip_id,
+                  rideable_type = bikeid,
+                  started_at = start_time,
+                  ended_at = end_time,
+                  start_station_name = from_station_name,
+                  start_station_id = from_station_id,
+                  end_station_name = to_station_name,
+                  end_station_id = to_station_id,
+                  member_casual = usertype)
+
+
+
+colnames(q1_2019)
+colnames(q1_2020)
+
+
+q1_2019 <- q1_2019 %>%
+  mutate(ride_id = as.character(ride_id),
+         rideable_type = as.character(rideable_type),
+         started_at = ymd_hms(started_at),
+         ended_at = ymd_hms(ended_at),
+         ride_length = as.numeric(difftime(ended_at, started_at, units = 'secs')))
+
+q1_2020 <- q1_2020 %>%
+  mutate(started_at = ymd_hms(started_at),
+         ended_at = ymd_hms(ended_at),
+         ride_length = as.numeric(difftime(ended_at, started_at, units = 'secs')))
+
+
+all_trips <- bind_rows(q1_2019, q1_2020)
+
+
+all_trips <- all_trips %>%
+  select(-c(start_lat, start_lng, end_lat, end_lng, birthyear, gender, tripduration))
+
+
+colnames(all_trips)
+
+head(all_trips)
+
+str(all_trips)
+
+glimpse(all_trips)
+
+summary(all_trips)
+
+```
+
+After reviewing this new dataset, I reassigned the labels of members and casuals for consolidation, because sometimes they were labeled as "subscriber" or "customer".
+
+```{r}
+table(all_trips$member_casual)
+
+all_trips <- all_trips %>%
+  mutate(member_casual = recode(member_casual,
+                                "Subscriber" = "member",
+                                "Customer" = "casual"))
+
+table(all_trips$member_casual)
+```
+
+Next, I added day, month, year, and time of day columns for more ways to aggregate and anaylze data, and removed entries where bikes were taken out for quality inspections, and where ride_length data (in seconds) was negative.
+
+```{r}
+all_trips$date <- as.Date(all_trips$started_at)
+
+all_trips <- all_trips %>%
+  mutate(month = format(as.Date(all_trips$date), "%m"),
+         day = format(as.Date(all_trips$date), "%d"),
+         year = format(as.Date(all_trips$date), "%Y"),
+         day_of_week = format(as.Date(all_trips$date), "%A"),
+         time_of_day = format(as.POSIXct(all_trips$started_at), "%H"))
+
+
+
+all_trips <- all_trips %>%
+  mutate(ride_length = as.numeric(difftime(ended_at, started_at, units = 'secs')))
+
+
+all_trips_v2 <- all_trips[!(all_trips$start_station_name == "HQ QR" | 
+                              all_trips$end_station_name == "HQ QR" | all_trips$ride_length<0),]
+```
+
+## ANALYZE
+
+I performed various descriptive analysis and aggregate fuctions for the ride length of each ride and compared them between members and casuals.
+
+```{r}
+summary(all_trips_v2)
+
+mean(all_trips_v2$ride_length) 
+
+median(all_trips_v2$ride_length) 
+
+max(all_trips_v2$ride_length)
+
+min(all_trips_v2$ride_length)
+
+
+aggregate(all_trips_v2$ride_length ~ all_trips_v2$member_casual, FUN = mean)
+
+aggregate(all_trips_v2$ride_length ~ all_trips_v2$member_casual, FUN = median)
+
+aggregate(all_trips_v2$ride_length ~ all_trips_v2$member_casual, FUN = max)
+
+aggregate(all_trips_v2$ride_length ~ all_trips_v2$member_casual, FUN = min)
+
+```
+
+I also found the total number and average duration of rides by both members and casuals for each day of the week
+
+```{r}
+all_trips_v2$day_of_week <- ordered(all_trips_v2$day_of_week, 
+                                    levels=c("Sunday", 
+                                             "Monday",
+                                             "Tuesday", 
+                                             "Wednesday", 
+                                             "Thursday", 
+                                             "Friday", 
+                                             "Saturday"))
+
+
+aggregate(all_trips_v2$ride_length ~ all_trips_v2$member_casual + 
+            all_trips_v2$day_of_week, FUN = mean)
+
+
+
+all_trips_v2 %>%
+  group_by(member_casual, day_of_week) %>%
+  summarise(number_of_rides = n(),
+            average_duration = mean(ride_length))
+
+```
+
+Then I compared the number of total rides for every hour of the day, every day of the week, and every day of the month between members and casuals, as well as the average duration of each of these rides by the same criteria.
+
+```{r}
+all_trips_v2 %>%
+  group_by(member_casual, time_of_day) %>%
+  summarise(Total_Rides = n()) %>%
+  ##slice_max(totals, n = 10) %>%
+  ggplot(aes(x = time_of_day, y = Total_Rides, fill = member_casual)) +
+  theme(axis.text.x = element_text(angle = 45)) +
+  geom_col(position = "dodge") +
+  labs(title = "Total Number of Rides Throughout Hours of the Day")
+
+
+all_trips_v2 %>%
+  group_by(member_casual, time_of_day) %>%
+  summarise(Average_Duration = mean(ride_length)) %>%
+  ##slice_max(average_duration, n = 10) %>%
+  ggplot(aes(x = time_of_day, y = Average_Duration, fill = member_casual)) +
+  theme(axis.text.x = element_text(angle = 45)) +
+  geom_col(position = "dodge") +
+  labs(title = "Average Duration of Rides Throughout Hours of the Day")
+
+
+all_trips_v2 %>%
+  group_by(member_casual, day_of_week) %>%
+  summarise(Total_Rides = n()) %>%
+  ggplot(aes(x = day_of_week, y = Total_Rides, fill = member_casual)) +
+  geom_col(position = "dodge") + 
+  scale_y_continuous (labels = scales::comma) +
+  labs(title = "Total Rides by Rider Type for each Day of Week")
+
+
+all_trips_v2 %>%
+  group_by(member_casual, day_of_week) %>%
+  summarise(Average_Duration = mean(ride_length)) %>%
+  ggplot(aes(x = day_of_week, y = Average_Duration, fill = member_casual)) +
+  geom_col(position = "dodge") + 
+  labs(title = "Average Ride Duration by Rider Type for Each Day of Week")
+
+
+all_trips_v2 %>%
+  group_by(member_casual, day) %>%
+  summarise(Total_Rides = n()) %>%
+  ggplot(aes(x = day, y = Total_Rides, fill = member_casual)) +
+  geom_col() +
+  labs(title = "Total Rides by Rider Type for Each Day of Month")
+
+
+all_trips_v2 %>%
+  group_by(member_casual, day) %>%
+  summarise(Average_Duration = mean(ride_length)) %>%
+  ggplot(aes(x = day, y = Average_Duration, fill = member_casual)) +
+  geom_col() + 
+  labs(title = "Average Ride Duration by Rider Type for Each Day of Month")
+```
+
+
+The trends I discovered were that, for the number of rides by rider type, members use Cyclistic bikes far more often than casuals across the board. For the times of the day, the days of the week, and the days of the month, there are hundreds to thousands more rides from members than casuals.
+
+However, with regards to the average duration of all rides by rider type, the casual users would spend far more time with Cyclistic bikes than members across the board. While the vast majorty of members don't spend more than 20-30 minutes on their rides, the casual riders use the bikes they rent for an hour, or multiple, at a time.
+
+Next, I counted and compared the total number of times a station was the start OR end of a ride by members and casuals to find the most frequented stations of each group, as well as when each of these rides started and ended. Once I had a sorted list of the most frequented stations, I mapped the top 10 most frequented start and end locations for both members and casuals.
+
+```{r}
+sort(table(all_trips_v2$start_station_id), decreasing = TRUE)
+
+all_trips_v2 %>%
+  group_by(member_casual, start_station_id) %>%
+  summarise(Total_Start_Instances = n()) %>%
+  #slice_max(Total_Start_Instances, n = 10) %>%
+  ggplot(aes(x = start_station_id, y = Total_Start_Instances, fill = member_casual)) +
+  theme(axis.text.x = element_text(angle = 45)) +
+  geom_col() +
+  labs(title = "Total of Each Station Being the Start of a Ride")
+```
+
+Top 10 most frequented start locations for members and casuals:
+
+![Map_of_starts](Map_of_starts.png)
+
+```{r}
+sort(table(all_trips_v2$end_station_id), decreasing = TRUE)
+
+all_trips_v2 %>%
+  group_by(member_casual, end_station_id) %>%
+  summarise(Total_End_Instances = n()) %>%
+  #slice_max(Total_End_Instances, n = 10) %>%
+  ggplot(aes(x = end_station_id, y = Total_End_Instances, fill = member_casual)) +
+  theme(axis.text.x = element_text(angle = 45)) +
+  geom_col() + 
+  labs(title = "Total of Each Station Being the End of a Ride")
+
+```
+
+
+Top 10 most frequented end locations for members and casuals:
+
+![Map_of_starts](Map_of_Ends.png)
+
+
+```{r}
+all_trips_v2 %>%
+  group_by(member_casual, start_station_id, time_of_day) %>%
+  summarise(Total_Start_Instances = n()) %>%
+  ##slice_max(total_starts, n = 10) %>%
+  ggplot(aes(x = time_of_day, y = Total_Start_Instances, fill = member_casual)) +
+  theme(axis.text.x = element_text(angle = 45)) +
+  geom_col(position = "dodge") +
+  labs(title = "Instances When a Ride Begins During the Day")
+```
+
+
+```{r}
+all_trips_v2 %>%
+  group_by(member_casual, end_station_id, time_of_day) %>%
+  summarise(Total_End_Instances = n()) %>%
+  ##slice_max(total_starts, n = 10) %>%
+  ggplot(aes(x = time_of_day, y = Total_End_Instances, fill = member_casual)) +
+  theme(axis.text.x = element_text(angle = 45)) +
+  geom_col(position = "dodge") + 
+  labs(title = "Instances When a Ride Ends During the Day")
+```
+
+
+
+For members, a few thousand rides begin at 7-8 a.m. or 4-5 p.m. and end within the same hour. But for casuals, there is a single trend of their rides begining and ending between 10 a.m. - 5 p.m. with a peak at 1-2p.m.
+
+Once I analyzed the start and end stations individually, I then looked at the number one most repeated start AND end station pair for members and casuals by each day of the week and found that the most frequented station for casuals is used every single day of the week, while the members use the same start and end stations for multiple days of the week.
+
+
+```{r}
+all_trips_v2$stationid_pairs <- paste(all_trips_v2$start_station_id, ",", all_trips_v2$end_station_id)
+all_trips_v2$stationname_pairs <- paste(all_trips_v2$start_station_name, ",", all_trips_v2$end_station_name)
+
+
+
+all_trips_v2 %>%
+  group_by(member_casual, day_of_week, stationname_pairs) %>%
+  summarise(Start_and_End_Total = n()) %>%
+  slice_max(Start_and_End_Total, n = 1)
+
+
+all_trips_v2 %>%
+  group_by(member_casual, day_of_week, stationname_pairs) %>%
+  summarise(Start_and_End = n()) %>%
+  slice_max(Start_and_End, n = 1) %>%
+  ##print(n = 28) %>%
+  ggplot(aes(x = day_of_week, y = Start_and_End, fill = stationname_pairs)) +
+  facet_wrap(~member_casual) +
+  theme(axis.text.x = element_text(angle = 45)) +
+  geom_col(position = "dodge") +
+  labs(title = "Most Frequented Start and End Stations During the Week")+
+  theme(legend.position="bottom")
+```
+
+
+## TOP 3 DIFFERENCES IN BEHAVIOR
+
+The top 3 differences in behavior between members and casuals that I have identified are:
+
+1. Members use Cyclistic bikes far more often, while casuals use Cyclistic bikes for far longer.
+
+2. Members use Cyclistic to get to and from work, while casuals use Cyclistic for recreational purposes.
+
+3. While each group of Cyclistic user favors the same few stations, members frequent stations within the city, while casuals frequent stations on the coastline in tourist areas.
+
+
